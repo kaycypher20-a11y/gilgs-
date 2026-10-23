@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gilgs Chemicals POS</title>
+<style>
+:root{--bg:#f4f7f6;--sf:#fff;--tx:#14282a;--mu:#5b6f70;--ln:#d5e0de;--pr:#0d6b66;--pt:#fff;--wa:#b4570a;--er:#b3261e;--ok:#1a7f45;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a1b;--sf:#172627;--tx:#e6f0ee;--mu:#8fa5a5;--ln:#2a3e3f;--pr:#3fb8ae;--pt:#06201e;--wa:#f0a050;--er:#ff8a80;--ok:#6fd29a}}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 "Segoe UI",system-ui,sans-serif}
+header{background:var(--pr);color:var(--pt);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+header b{font-size:17px}header span{font-size:12px;opacity:.85}
+nav{display:flex;gap:4px;padding:8px 12px;overflow-x:auto;background:var(--sf);border-bottom:1px solid var(--ln)}
+nav button{white-space:nowrap;border:0;background:none;color:var(--mu);padding:8px 14px;border-radius:6px;font:inherit;cursor:pointer}
+nav button.on{background:var(--pr);color:var(--pt)}
+main{padding:14px;max-width:1100px;margin:auto}
+.g{display:grid;gap:14px;grid-template-columns:1.5fr 1fr}@media(max-width:800px){.g{grid-template-columns:1fr}}
+.c{background:var(--sf);border:1px solid var(--ln);border-radius:8px;padding:14px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:16px}
+input,select,textarea,button{font:inherit;color:var(--tx)}
+input,select,textarea{background:var(--bg);border:1px solid var(--ln);border-radius:6px;padding:8px 10px;width:100%}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--pr);outline-offset:1px}
+.b{background:var(--pr);color:var(--pt);border:0;border-radius:6px;padding:9px 16px;cursor:pointer;font-weight:600}
+.b.s{background:none;color:var(--pr);border:1px solid var(--pr)}.b.d{background:var(--er);color:#fff}
+.b.x{padding:3px 9px;font-size:13px}
+.r{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}.r>*{flex:1;min-width:110px}.r>.n{flex:none}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--ln);vertical-align:middle}
+th{color:var(--mu);font-weight:600;font-size:13px}td.n,th.n{text-align:right}
+.w{overflow-x:auto}.mu{color:var(--mu);font-size:13px}.wa{color:var(--wa);font-weight:600}.er{color:var(--er);font-weight:600}.ok{color:var(--ok);font-weight:600}
+.tot{font-size:26px;font-weight:700;margin:6px 0}
+.scan{font-size:18px;padding:12px;border:2px solid var(--pr)}
+.q{width:64px;padding:4px 6px}
+#toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:6px;display:none;z-index:20;max-width:90%}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:10;padding:14px}
+.ov>div{background:var(--sf);border-radius:8px;padding:16px;max-width:420px;width:100%;max-height:90vh;overflow:auto}
+video{width:100%;border-radius:6px;background:#000}
+.rc{font-family:ui-monospace,Consolas,monospace;font-size:13px;white-space:pre-wrap}
+</style></head><body>
+<header><b>Gilgs Chemicals</b><span>Mpoase Road, Accra · 0244451735 / 0244056630</span></header>
+<nav id="nav"></nav><main id="app"><p class="mu">Please sign in.</p></main><div id="toast"></div>
+<script>
+const SHOP={name:'Gilgs Chemicals',addr:'Mpoase Road, Accra',tel:'0244451735 / 0244056630'};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const M=n=>'GH₵ '+(+n||0).toFixed(2);
+const today=()=>new Date().toISOString().slice(0,10);
+const plusM=m=>{const d=new Date();d.setMonth(d.getMonth()+m);return d.toISOString().slice(0,10)};
+const stock=d=>(d.batches||[]).reduce((a,b)=>a+b.qty,0);
+const sellable=d=>(d.batches||[]).filter(b=>b.qty>0&&b.exp>=today()).reduce((a,b)=>a+b.qty,0);
+let db=null,D=[],S=[],C=[],P=[],cart=[],tab='sell',method='Cash',custId='',disc=0,paid='',stream=null,scanTimer=null,lastReceipt=null;
+const TABS=[['sell','Sell'],['drugs','Drugs'],['recv','Receive stock'],['cust','Credit customers'],['sup','Suppliers'],['rep','Reports']];
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',3200)}
+const byCode=c=>D.find(d=>d.barcode&&d.barcode===String(c).trim());
+async function w(fn){try{await fn()}catch(e){toast('Not saved: '+(e.message||e.code||e)+'. You may not have edit access.')}}
+function sub(name,set){db.collection(name).onSnapshot(s=>{set(s.docs.map(x=>({id:x.id,...x.data()})));if(!document.activeElement||!['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)||document.activeElement.id==='scan')render()},e=>toast('Sync error: '+e.message))}
+window.startApp=()=>{db=window.shopDB;sub('drugs',x=>D=x);sub('sales',x=>S=x);sub('customers',x=>C=x);sub('suppliers',x=>P=x);render()};
+function nav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('')}
+function render(){if(!db)return;nav();$('#app').innerHTML=({sell:vSell,drugs:vDrugs,recv:vRecv,cust:vCust,sup:vSup,rep:vRep})[tab]();if(tab==='sell'&&!stream){const s=$('#scan');if(s&&!lastReceipt)s.focus()}}
+/* ---------- SELL ---------- */
+const cartTotal=()=>cart.reduce((a,l)=>{const d=D.find(x=>x.id===l.id);return a+(d?d.price*l.qty:0)},0);
+function vSell(){
+ const sub=cartTotal(),tot=Math.max(0,sub-(+disc||0)),ch=(+paid||0)-tot;
+ const rows=cart.map((l,i)=>{const d=D.find(x=>x.id===l.id);if(!d)return'';const lo=l.qty>sellable(d);return`<tr><td>${esc(d.name)}${lo?'<div class="er mu">Only '+sellable(d)+' in date</div>':''}</td><td class="n">${M(d.price)}</td><td><input class="q" type="number" min="1" value="${l.qty}" onchange="cart[${i}].qty=Math.max(1,+this.value||1);render()"></td><td class="n">${M(d.price*l.qty)}</td><td><button class="b s x" onclick="cart.splice(${i},1);render()">✕</button></td></tr>`}).join('');
+ const cu=C.map(c=>`<option value="${c.id}" ${custId===c.id?'selected':''}>${esc(c.name)} (owes ${M(c.balance)})</option>`).join('');
+ return`<div class="g"><div class="c"><h2>Scan or search</h2>
+ <div class="r"><input id="scan" class="scan" placeholder="Scan barcode, or type a drug name and press Enter" autocomplete="off" onkeydown="if(event.key==='Enter'){addScan(this.value);this.value=''}" oninput="sugg(this.value)"><button class="b s n" onclick="camStart('sell')">📷 Camera</button></div>
+ <div id="sg" class="mu"></div>
+ <div class="w"><table><tr><th>Drug</th><th class="n">Price</th><th>Qty</th><th class="n">Total</th><th></th></tr>${rows||'<tr><td colspan="5" class="mu">Nothing scanned yet.</td></tr>'}</table></div></div>
+ <div class="c"><h2>Payment</h2><div class="mu">Subtotal ${M(sub)}</div>
+ <div class="r"><label class="mu">Discount (GH₵)<input type="number" min="0" value="${disc||''}" onchange="disc=+this.value||0;render()"></label></div>
+ <div class="tot">${M(tot)}</div>
+ <div class="r">${['Cash','MoMo','Credit'].map(m=>`<button class="b ${method===m?'':'s'}" onclick="method='${m}';render()">${m}</button>`).join('')}</div>
+ ${method==='Credit'?`<div class="r"><select onchange="custId=this.value;render()"><option value="">Choose customer…</option>${cu}</select></div>`:`<div class="r"><label class="mu">Amount received<input type="number" min="0" value="${paid}" onchange="paid=this.value;render()"></label></div><div>${paid!==''?(ch>=0?`Change: <b class="ok">${M(ch)}</b>`:`<b class="er">Short by ${M(-ch)}</b>`):''}</div>`}
+ <div class="r" style="margin-top:12px"><button class="b" onclick="finish()" ${cart.length?'':'disabled'}>Complete sale</button><button class="b s" onclick="cart=[];disc=0;paid='';render()">Clear</button></div></div></div>`}
+function sugg(q){q=q.trim().toLowerCase();const el=$('#sg');if(!el)return;if(q.length<2){el.innerHTML='';return}
+ el.innerHTML=D.filter(d=>d.name.toLowerCase().includes(q)).slice(0,6).map(d=>`<button class="b s x" style="margin:2px" onclick="addDrug('${d.id}');$('#scan').value='';$('#sg').innerHTML=''">${esc(d.name)} · ${M(d.price)}</button>`).join('')||'No match'}
+function addScan(v){v=v.trim();if(!v)return;const d=byCode(v)||D.filter(x=>x.name.toLowerCase().includes(v.toLowerCase()))[0];if(!d){toast('No drug found for "'+v+'". Add it in Drugs.');return}addDrug(d.id)}
+function addDrug(id){const l=cart.find(x=>x.id===id);if(l)l.qty++;else cart.push({id,qty:1});const d=D.find(x=>x.id===id);if(d&&sellable(d)<1)toast(d.name+': no in-date stock!');render()}
+async function finish(){
+ const sub=cartTotal(),tot=Math.max(0,sub-(+disc||0));
+ if(method==='Credit'){if(!custId)return toast('Choose a credit customer');const c=C.find(x=>x.id===custId);if(c.limit&&c.balance+tot>c.limit&&!confirm('This is over '+c.name+"'s credit limit. Continue?"))return}
+ const bad=cart.filter(l=>{const d=D.find(x=>x.id===l.id);return d&&l.qty>sellable(d)});
+ if(bad.length&&!confirm('Some items have less in-date stock than requested (expired or out of stock). Sell anyway?'))return;
+ await w(async()=>{
+  const items=[];
+  for(const l of cart){const d=D.find(x=>x.id===l.id);let need=l.qty,cost=0;const bs=(d.batches||[]).map(b=>({...b})).sort((a,b)=>a.exp<b.exp?-1:1);
+   for(const pass of [0,1])for(const b of bs){if(need<=0)break;if(pass===0&&b.exp<today())continue;if(pass===1&&b.exp>=today())continue;const t=Math.min(b.qty,need);b.qty-=t;need-=t;cost+=t*b.cost}
+   const last=bs.length?bs[bs.length-1].cost:0;cost+=need*last;
+   await db.doc('drugs/'+d.id).update({batches:bs.filter(b=>b.qty>0)});
+   items.push({id:d.id,name:d.name,qty:l.qty,price:d.price,cost:+(cost/l.qty).toFixed(4)})}
+  const sale={ts:Date.now(),items,discount:+disc||0,total:tot,method,customerId:method==='Credit'?custId:'',received:+paid||0};
+  if(method==='Credit'){const c=C.find(x=>x.id===custId);await db.doc('customers/'+custId).update({balance:+(c.balance+tot).toFixed(2)})}
+  const ref=await db.collection('sales').add(sale);
+  lastReceipt={...sale,no:ref.id.slice(-5).toUpperCase()};cart=[];disc=0;paid='';custId='';showReceipt();
+ })}
+function showReceipt(){const r=lastReceipt;if(!r)return;const c=C.find(x=>x.id===r.customerId);
+ const t=`${SHOP.name}\n${SHOP.addr}\nTel: ${SHOP.tel}\n${new Date(r.ts).toLocaleString()}  #${r.no}\n--------------------------------\n`+r.items.map(i=>`${i.name}\n  ${i.qty} x ${i.price.toFixed(2)} = ${(i.qty*i.price).toFixed(2)}`).join('\n')+`\n--------------------------------\n`+(r.discount?`Discount: -${r.discount.toFixed(2)}\n`:'')+`TOTAL: ${M(r.total)}\nPaid by: ${r.method}${c?' ('+c.name+')':''}\nThank you for shopping with us!`;
+ const o=document.createElement('div');o.className='ov';o.innerHTML=`<div><h2>Sale complete</h2><div class="rc">${esc(t)}</div><div class="r" style="margin-top:12px"><button class="b" id="rcx">New sale</button></div></div>`;document.body.appendChild(o);$('#rcx').onclick=()=>{o.remove();lastReceipt=null;render()}}
+/* ---------- CAMERA ---------- */
+async function camStart(mode){
+ if(!('BarcodeDetector' in window))return toast('Camera scanning needs Chrome on Android or desktop. Use the barcode scanner instead.');
+ const o=document.createElement('div');o.className='ov';o.innerHTML='<div><video id="vid" playsinline muted></video><p class="mu" id="cm">Point at a barcode…</p><button class="b s" id="cx">Close</button></div>';document.body.appendChild(o);
+ const stop=()=>{clearInterval(scanTimer);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;o.remove()};$('#cx').onclick=stop;
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});const v=$('#vid');v.srcObject=stream;await v.play();
+  const bd=new BarcodeDetector();let busy=0;scanTimer=setInterval(async()=>{if(busy)return;busy=1;try{const f=await bd.detect(v);if(f.length){const code=f[0].rawValue;if(mode==='sell'){addScan(code);toast('Scanned '+code)}else{$('#rbc').value=code;recvPick(code)}stop()}}catch(e){}busy=0},400)
+ }catch(e){stop();toast('Camera not available here: '+(e.message||e))}}
+/* ---------- DRUGS ---------- */
+function vDrugs(){
+ const rows=D.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(d=>`<tr><td>${esc(d.name)}<div class="mu">${esc(d.category||'')}</div></td><td>${esc(d.barcode||'—')}</td><td class="n">${M(d.price)}</td><td class="n ${stock(d)<=d.reorder?'er':''}">${stock(d)}</td><td class="n">${d.reorder||0}</td><td><button class="b s x" onclick="editDrug('${d.id}')">Edit</button></td></tr>`).join('');
+ return`<div class="c"><h2>Add a drug</h2><div class="r"><input id="dn" placeholder="Name"><input id="db" placeholder="Barcode (blank if none)"><input id="dc" placeholder="Category"></div>
+ <div class="r"><input id="dp" type="number" step="0.01" placeholder="Selling price"><input id="dr" type="number" placeholder="Reorder at (qty)"><button class="b n" onclick="saveDrug()">Save drug</button></div></div>
+ <div class="c"><h2>Bulk upload</h2><p class="mu">CSV with columns: name, barcode, price, reorder, category. In Excel use File → Save as CSV.</p><div class="r"><input type="file" id="csv" accept=".csv,text/csv"><button class="b s n" onclick="importCsv()">Import</button><button class="b s n" onclick="seed()">Load 10 sample drugs</button></div></div>
+ <div class="c"><h2>${D.length} drugs</h2><div class="w"><table><tr><th>Drug</th><th>Barcode</th><th class="n">Price</th><th class="n">Stock</th><th class="n">Reorder</th><th></th></tr>${rows||'<tr><td colspan="6" class="mu">No drugs yet. Add one, import a CSV, or load the samples.</td></tr>'}</table></div></div>`}
+async function saveDrug(id){const n=$('#dn').value.trim();if(!n)return toast('Enter a name');const bc=$('#db').value.trim();if(bc&&D.some(d=>d.barcode===bc&&d.id!==id))return toast('That barcode already belongs to another drug');
+ await w(async()=>{const data={name:n,barcode:bc,category:$('#dc').value.trim(),price:+$('#dp').value||0,reorder:+$('#dr').value||0};if(id)await db.doc('drugs/'+id).update(data);else await db.collection('drugs').add({...data,batches:[]});toast('Saved');['dn','db','dc','dp','dr'].forEach(i=>$('#'+i).value='')})}
+function editDrug(id){const d=D.find(x=>x.id===id);$('#dn').value=d.name;$('#db').value=d.barcode||'';$('#dc').value=d.category||'';$('#dp').value=d.price;$('#dr').value=d.reorder||0;const b=document.querySelector('.c .b.n');b.textContent='Update drug';b.onclick=()=>saveDrug(id);window.scrollTo(0,0)}
+async function importCsv(){const f=$('#csv').files[0];if(!f)return toast('Choose a CSV file');const t=await f.text();const L=t.split(/\r?\n/).filter(x=>x.trim());const h=L.shift().split(',').map(x=>x.trim().toLowerCase());
+ await w(async()=>{let n=0;for(const l of L){const c=l.split(',').map(x=>x.trim().replace(/^"|"$/g,''));const o=Object.fromEntries(h.map((k,i)=>[k,c[i]]));if(!o.name)continue;if(o.barcode&&D.some(d=>d.barcode===o.barcode))continue;await db.collection('drugs').add({name:o.name,barcode:o.barcode||'',price:+o.price||0,reorder:+o.reorder||0,category:o.category||'',batches:[]});n++}toast(n+' drugs imported')})}
+async function seed(){const L=[['Paracetamol 500mg (strip)','6001000000011',3,20,'Pain relief'],['Amoxicillin 500mg (strip)','6001000000028',8,20,'Antibiotic'],['Ibuprofen 400mg (strip)','6001000000035',5,15,'Pain relief'],['Vitamin C 1000mg (tube)','6001000000042',25,10,'Vitamins'],['ORS sachet','6001000000059',2,30,'Rehydration'],['Artemether/Lumefantrine (pack)','6001000000066',18,15,'Antimalarial'],['Cetirizine 10mg (strip)','6001000000073',4,15,'Allergy'],['Omeprazole 20mg (strip)','6001000000080',7,15,'Stomach'],['Metronidazole 400mg (strip)','6001000000097',4,15,'Antibiotic'],['Cough syrup 100ml','6001000000103',15,10,'Cough & cold']];
+ await w(async()=>{for(const [n,b,p,r,c] of L){if(D.some(d=>d.barcode===b))continue;await db.collection('drugs').add({name:n,barcode:b,price:p,reorder:r,category:c,batches:[{id:'s'+b,qty:50,cost:+(p*.65).toFixed(2),exp:plusM(18),inv:'SAMPLE'}]})}toast('Samples loaded (fake barcodes, prices and stock)')})}
+/* ---------- RECEIVE ---------- */
+function vRecv(){
+ const so=P.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join(''),dopt=D.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+ return`<div class="c"><h2>Receive stock</h2>
+ <div class="r"><input id="rbc" placeholder="Scan barcode" onkeydown="if(event.key==='Enter')recvPick(this.value)"><button class="b s n" onclick="camStart('recv')">📷 Camera</button></div>
+ <div class="r"><select id="rd"><option value="">Choose drug…</option>${dopt}</select></div>
+ <div class="r"><input id="rq" type="number" min="1" placeholder="Quantity"><input id="rc" type="number" step="0.01" placeholder="Cost per unit"><label class="mu">Expiry<input id="re" type="date"></label></div>
+ <div class="r"><select id="rs"><option value="">Supplier (optional)</option>${so}</select><input id="ri" placeholder="Invoice no."><input id="rp" type="number" step="0.01" placeholder="Amount paid now"></div>
+ <button class="b" onclick="recv()">Add to stock</button></div>
+ <div class="c"><h2>Current batches</h2><div class="w"><table><tr><th>Drug</th><th class="n">Qty</th><th>Expiry</th><th class="n">Cost</th><th>Invoice</th></tr>${D.flatMap(d=>(d.batches||[]).map(b=>({d,b}))).sort((a,b)=>a.b.exp<b.b.exp?-1:1).map(({d,b})=>`<tr><td>${esc(d.name)}</td><td class="n">${b.qty}</td><td class="${b.exp<today()?'er':b.exp<plusM(3)?'wa':''}">${b.exp}</td><td class="n">${M(b.cost)}</td><td>${esc(b.inv||'')}</td></tr>`).join('')||'<tr><td colspan="5" class="mu">No stock yet.</td></tr>'}</table></div></div>`}
+function recvPick(c){const d=byCode(c);if(!d)return toast('Barcode not found. Add the drug first.');$('#rd').value=d.id;$('#rq').focus()}
+async function recv(){const id=$('#rd').value,q=+$('#rq').value,cost=+$('#rc').value,exp=$('#re').value;if(!id||!q||!exp)return toast('Choose a drug and enter quantity and expiry');
+ const d=D.find(x=>x.id===id),sid=$('#rs').value,paid=+$('#rp').value||0,total=q*cost;
+ await w(async()=>{await db.doc('drugs/'+id).update({batches:[...(d.batches||[]),{id:'b'+Date.now(),qty:q,cost,exp,inv:$('#ri').value.trim()}]});
+  if(sid){const s=P.find(x=>x.id===sid);await db.doc('suppliers/'+sid).update({balance:+(s.balance+total-paid).toFixed(2)})}
+  toast('Added '+q+' × '+d.name);['rbc','rq','rc','re','ri','rp'].forEach(i=>$('#'+i).value='')})}
+/* ---------- PEOPLE ---------- */
+function people(kind,list,title,owe){
+ return`<div class="c"><h2>Add ${title}</h2><div class="r"><input id="pn" placeholder="Name"><input id="pt" placeholder="Phone (e.g. 0244xxxxxx)">${kind==='customers'?'<input id="pl" type="number" placeholder="Credit limit (optional)">':''}<button class="b n" onclick="addPerson('${kind}')">Save</button></div></div>
+ <div class="c"><h2>${owe}</h2><div class="w"><table><tr><th>Name</th><th>Phone</th><th class="n">Balance</th><th></th></tr>${list.slice().sort((a,b)=>b.balance-a.balance).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.phone||'')}</td><td class="n ${p.balance>0?'wa':''}">${M(p.balance)}</td><td><button class="b s x" onclick="payPerson('${kind}','${p.id}')">Record payment</button> ${kind==='customers'&&p.balance>0&&p.phone?`<a class="b s x" style="text-decoration:none;display:inline-block" target="_blank" href="https://wa.me/233${esc(p.phone.replace(/\D/g,'').replace(/^0/,''))}?text=${encodeURIComponent('Hello '+p.name+', a friendly reminder of your balance of '+M(p.balance)+' at '+SHOP.name+'. Thank you.')}">WhatsApp</a>`:''}</td></tr>`).join('')||'<tr><td colspan="4" class="mu">None yet.</td></tr>'}</table></div></div>`}
+const vCust=()=>people('customers',C,'credit customer','Who owes you');
+const vSup=()=>people('suppliers',P,'supplier','Who you owe');
+async function addPerson(k){const n=$('#pn').value.trim();if(!n)return toast('Enter a name');await w(async()=>{await db.collection(k).add({name:n,phone:$('#pt').value.trim(),balance:0,...(k==='customers'?{limit:+($('#pl')?.value)||0}:{})});toast('Saved')})}
+async function payPerson(k,id){const p=(k==='customers'?C:P).find(x=>x.id===id);const a=+prompt('Payment amount for '+p.name+' (GH₵)?');if(!a||a<0)return;await w(async()=>{await db.doc(k+'/'+id).update({balance:+(p.balance-a).toFixed(2)});await db.collection('payments').add({ts:Date.now(),kind:k,party:p.name,amount:a});toast('Payment recorded')})}
+/* ---------- REPORTS ---------- */
+function vRep(){
+ const d0=new Date();d0.setHours(0,0,0,0);const t0=+d0,w0=t0-6*864e5;
+ const agg=a=>({n:a.length,rev:a.reduce((x,s)=>x+s.total,0),pr:a.reduce((x,s)=>x+s.items.reduce((y,i)=>y+(i.price-i.cost)*i.qty,0)-s.discount,0)});
+ const td=agg(S.filter(s=>s.ts>=t0)),wk=agg(S.filter(s=>s.ts>=w0));
+ const days=[...Array(7)].map((_,i)=>{const a=t0-(6-i)*864e5;return{l:new Date(a).toLocaleDateString(undefined,{weekday:'short'}),v:S.filter(s=>s.ts>=a&&s.ts<a+864e5).reduce((x,s)=>x+s.total,0)}});const mx=Math.max(1,...days.map(d=>d.v));
+ const bars=days.map(d=>`<div style="flex:1;text-align:center"><div style="height:${Math.round(d.v/mx*90)+2}px;background:var(--pr);border-radius:3px 3px 0 0;margin-top:${92-Math.round(d.v/mx*90)}px"></div><div class="mu">${d.l}</div></div>`).join('');
+ const best={};S.filter(s=>s.ts>=w0).forEach(s=>s.items.forEach(i=>best[i.name]=(best[i.name]||0)+i.qty));
+ const top=Object.entries(best).sort((a,b)=>b[1]-a[1]).slice(0,8);
+ const sv=D.reduce((a,d)=>a+(d.batches||[]).reduce((x,b)=>x+b.qty*b.cost,0),0);
+ const low=D.filter(d=>stock(d)<=d.reorder),exp=D.flatMap(d=>(d.batches||[]).filter(b=>b.exp<plusM(3)).map(b=>({d,b})));
+ const owed=C.reduce((a,c)=>a+c.balance,0),owe=P.reduce((a,c)=>a+c.balance,0);
+ return`<div class="g" style="grid-template-columns:1fr 1fr"><div class="c"><h2>Today</h2><div class="tot">${M(td.rev)}</div><div class="mu">${td.n} sales · profit ${M(td.pr)}</div></div>
+ <div class="c"><h2>Last 7 days</h2><div class="tot">${M(wk.rev)}</div><div class="mu">${wk.n} sales · profit ${M(wk.pr)}</div></div></div>
+ <div class="c"><h2>Daily sales</h2><div style="display:flex;gap:6px;align-items:flex-end;height:130px">${bars}</div></div>
+ <div class="g" style="grid-template-columns:1fr 1fr"><div class="c"><h2>Best sellers (7 days)</h2>${top.map(([n,q])=>`<div>${esc(n)} <b>×${q}</b></div>`).join('')||'<span class="mu">No sales yet</span>'}</div>
+ <div class="c"><h2>Money</h2><div>Stock value (at cost): <b>${M(sv)}</b></div><div>Customers owe you: <b class="wa">${M(owed)}</b></div><div>You owe suppliers: <b class="wa">${M(owe)}</b></div></div></div>
+ <div class="c"><h2>Alerts</h2><div class="r"><div><b>Low stock (${low.length})</b>${low.map(d=>`<div>${esc(d.name)}: <span class="er">${stock(d)}</span> left</div>`).join('')||'<div class="mu">All good</div>'}</div>
+ <div><b>Expired or expiring in 3 months (${exp.length})</b>${exp.map(({d,b})=>`<div>${esc(d.name)} · ${b.qty} · <span class="${b.exp<today()?'er':'wa'}">${b.exp}</span></div>`).join('')||'<div class="mu">None</div>'}</div></div></div>
+ <div class="c"><h2>Backup</h2><button class="b s" onclick="exp_('sales')">Export sales</button> <button class="b s" onclick="exp_('stock')">Export stock</button></div>`}
+async function exp_(k){
+ const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';let rows;
+ if(k==='sales')rows=[['Date','Receipt','Drug','Qty','Price','Cost','Discount','Total','Method']].concat(S.sort((a,b)=>a.ts-b.ts).flatMap(s=>s.items.map(i=>[new Date(s.ts).toLocaleString(),s.id.slice(-5),i.name,i.qty,i.price,i.cost,s.discount,s.total,s.method])));
+ else rows=[['Drug','Barcode','Price','Reorder','Batch qty','Cost','Expiry','Invoice']].concat(D.flatMap(d=>(d.batches||[]).map(b=>[d.name,d.barcode,d.price,d.reorder,b.qty,b.cost,b.exp,b.inv])));
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+(rows.map(r=>r.map(q).join(',')).join('\n'))],{type:'text/csv'}));a.download='gilgs-'+k+'-'+today()+'.csv';a.click()}
+</script><div id="login" class="ov"><div><h2>Gilgs Chemicals POS</h2><p class="mu" id="lmsg">Sign in with your shop account.</p>
+<div class="r"><input id="le" type="email" placeholder="Email" autocomplete="username"></div><div class="r"><input id="lp" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+<button class="b" onclick="doLogin()">Sign in</button></div></div>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,setDoc,updateDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+/* ====== PASTE YOUR FIREBASE CONFIG HERE (Project settings > Your apps > Web app) ====== */
+const firebaseConfig={apiKey:"AIzaSyCxOv70mQlRFeFNpQbgMk6tZeTBLgzq2qk",authDomain:"gilgs-chemicals.firebaseapp.com",projectId:"gilgs-chemicals",storageBucket:"gilgs-chemicals.firebasestorage.app",messagingSenderId:"193697428159",appId:"1:193697428159:web:ea7cc331d95aa8e3934c0a"};
+/* ================================================================================== */
+const L=$('#login'),msg=t=>$('#lmsg').textContent=t;
+if(firebaseConfig.apiKey.startsWith('PASTE'))msg('Firebase is not set up yet. Paste your config into the file (see the setup steps).');
+else{
+const app=initializeApp(firebaseConfig);
+const F=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});
+const auth=getAuth(app);
+const fail=e=>toast('Not saved: '+(e.message||e));
+/* Writes apply locally at once and sync later, so selling keeps working offline. */
+window.shopDB={collection:n=>({onSnapshot:(a,b)=>onSnapshot(collection(F,n),a,b),add:d=>{const r=doc(collection(F,n));setDoc(r,d).catch(fail);return Promise.resolve(r)}}),doc:p=>({update:d=>{updateDoc(doc(F,p),d).catch(fail);return Promise.resolve()}})};
+window.doLogin=()=>signInWithEmailAndPassword(auth,$('#le').value.trim(),$('#lp').value).catch(()=>msg('Wrong email or password, or no internet on first sign-in.'));
+let started=false;
+onAuthStateChanged(auth,u=>{if(u){L.style.display='none';if(!started){started=true;const b=document.createElement('button');b.className='b s x';b.style.cssText='color:inherit;border-color:currentColor';b.textContent='Sign out';b.onclick=()=>signOut(auth).then(()=>location.reload());document.querySelector('header').appendChild(b);startApp()}}else L.style.display='flex'});
+}
+</script>
+</body></html>
